@@ -20,10 +20,10 @@ GoAlong runs on a lean, budget-friendly infra stack designed for an MVP that nee
 │  └──────┬───────┘   └────────────────────┘   └─────────────────┘  │
 │         │                                                        │
 │  ┌──────┴───────────────────────────┐                            │
-│  │  Compute Engine (e2-micro)       │                            │
-│  │  Self-hosted OSRM                │                            │
-│  │  (Routing + Distance)            │                            │
-│  │  Always-on, ~$6/month            │                            │
+│  │  Compute Engine (e2-medium, 4GB)    │                            │
+│  │  Self-hosted OSRM                    │                            │
+│  │  (Routing + Distance)                │                            │
+│  │  Always-on, ~$17/month               │                            │
 │  └──────────────────────────────────┘                            │
 └──────────────────────────────────────────────────────────────────┘
          │                    │                      │
@@ -276,7 +276,7 @@ Supabase free tier includes 30 OTP messages/month. After that, you need a Twilio
 -- 1. Profile photos (public read)
 -- Bucket: profile-photos
 -- Public: Yes
--- Max file size: 2MB
+-- Max file size: 5MB
 -- Allowed types: image/jpeg, image/png, image/webp
 
 -- 2. Driver documents (private)
@@ -344,12 +344,12 @@ RLS is disabled on all tables via Supabase Dashboard → Table Editor → Disabl
 // Run in MongoDB Atlas → Collections → goalong → chat_messages
 
 db.chat_messages.createIndex(
-  { "booking_id": 1, "created_at": 1 },
+  { "booking_id": 1, "sent_at": 1 },
   { name: "booking_timeline" }
 )
 
 db.chat_messages.createIndex(
-  { "created_at": 1 },
+  { "sent_at": 1 },
   { expireAfterSeconds: 7776000, name: "auto_delete_90_days" }
   // Auto-delete messages after 90 days to stay within 512MB
 )
@@ -362,7 +362,7 @@ db.chat_messages.createIndex(
 ### Why Self-Host
 - Google Maps API: ~₹700/1000 requests (gets expensive fast)
 - OSRM: Free, open-source, uses OpenStreetMap data
-- Self-hosted on an `e2-micro` VM: ~$6/month
+- Self-hosted on an `e2-medium` VM (4GB RAM, needed for India OSM extract): ~$17/month
 
 ### Setup Script
 
@@ -383,7 +383,7 @@ cd /opt/osrm
 # Use Geofabrik's India extract
 wget https://download.geofabrik.de/asia/india-latest.osm.pbf
 
-# Pre-process the data (takes ~15-30 minutes on e2-micro)
+# Pre-process the data (takes ~10-15 minutes on e2-medium)
 sudo docker run -t -v /opt/osrm:/data osrm/osrm-backend \
   osrm-extract -p /opt/car.lua /data/india-latest.osm.pbf
 
@@ -408,7 +408,7 @@ sudo docker run -d --restart=always \
 
 | Setting          | Value                               |
 |------------------|-------------------------------------|
-| Machine type     | e2-micro (2 vCPU, 1 GB memory)     |
+| Machine type     | e2-medium (2 vCPU, 4 GB memory)   |
 | Image            | Ubuntu 22.04 LTS                    |
 | Disk             | 20 GB SSD (for OSM data + OSRM)    |
 | Region           | asia-south1 (same as Cloud Run)     |
@@ -594,7 +594,7 @@ alembic downgrade -1
 | Service                     | Cost              | Notes                         |
 |-----------------------------|--------------------|-------------------------------|
 | GCP Cloud Run               | $0                | Free tier: 2M requests/month  |
-| GCP Compute Engine (OSRM)   | ~$6              | e2-micro, always running      |
+| GCP Compute Engine (OSRM)   | ~$17             | e2-medium (4GB), always running |
 | GCP Cloud Build              | $0               | Free tier: 120 build-min/day  |
 | GCP Secret Manager           | $0               | Free tier: 10K access/month   |
 | GCP VPC Connector            | ~$7              | Required for OSRM access      |
@@ -603,7 +603,7 @@ alembic downgrade -1
 | Firebase (FCM)               | $0               | FCM is free unlimited         |
 | Twilio SMS (OTP)             | ~₹700 (~$8)     | ~2000 SMS/month               |
 | Domain                       | ~$10/year        | Annual cost                   |
-| **Total**                    | **~$21/month**   | Everything else is free tier  |
+| **Total**                    | **~$32/month**   | Everything else is free tier  |
 
 ---
 

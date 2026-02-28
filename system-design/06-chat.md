@@ -425,6 +425,18 @@ async def unread_message_count(
     """Get total unread message count for the current user. Used for badge display."""
     count = await get_unread_count(str(current_user.id))
     return {"data": {"unread_count": count}}
+
+
+@router.put("/{booking_id}/read")
+async def mark_messages_read(
+    booking_id: str,
+    current_user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Explicitly mark all messages in a booking chat as read for the current user."""
+    await _validate_chat_access(db, booking_id, str(current_user.id))
+    modified = await mark_as_read(booking_id, str(current_user.id))
+    return {"data": {"marked_read": modified}}
 ```
 
 ---

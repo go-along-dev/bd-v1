@@ -175,12 +175,13 @@ class DriverAdmin(ModelView, model=Driver):
         Driver.id,
         Driver.user,                    # Shows relationship
         Driver.vehicle_number,
-        Driver.vehicle_name,
+        Driver.vehicle_make,
+        Driver.vehicle_model,
         Driver.verification_status,
         Driver.onboarded_at,
         Driver.created_at,
     ]
-    column_searchable_list = [Driver.vehicle_number]
+    column_searchable_list = [Driver.vehicle_number, Driver.vehicle_make]
     column_sortable_list = [Driver.created_at, Driver.verification_status]
 
     # Filter pending drivers quickly
@@ -213,6 +214,7 @@ class DriverAdmin(ModelView, model=Driver):
 
             # Notify driver
             await notification_service.send_push(
+                db=db,
                 user_id=str(driver.user_id),
                 title="Driver Approved!",
                 body="You can now publish rides on GoAlong.",
@@ -247,8 +249,8 @@ class DriverDocumentAdmin(ModelView, model=DriverDocument):
     column_list = [
         DriverDocument.id,
         DriverDocument.driver,
-        DriverDocument.document_type,
-        DriverDocument.document_url,      # Clickable link to view
+        DriverDocument.doc_type,
+        DriverDocument.file_url,          # Clickable link to view
         DriverDocument.created_at,
     ]
     can_create = False
@@ -266,16 +268,16 @@ class RideAdmin(ModelView, model=Ride):
     column_list = [
         Ride.id,
         Ride.driver,
-        Ride.source_city,
-        Ride.destination_city,
+        Ride.source_address,
+        Ride.dest_address,
         Ride.departure_time,
         Ride.available_seats,
-        Ride.fare,
+        Ride.per_seat_fare,
         Ride.status,
         Ride.created_at,
     ]
-    column_searchable_list = [Ride.source_city, Ride.destination_city]
-    column_sortable_list = [Ride.departure_time, Ride.created_at, Ride.fare]
+    column_searchable_list = [Ride.source_address, Ride.dest_address]
+    column_sortable_list = [Ride.departure_time, Ride.created_at, Ride.per_seat_fare]
     column_default_sort = ("departure_time", True)
 
     can_create = False
@@ -295,12 +297,12 @@ class BookingAdmin(ModelView, model=Booking):
         Booking.ride,
         Booking.passenger,
         Booking.seats_booked,
-        Booking.partial_fare,
+        Booking.fare,
         Booking.status,
-        Booking.created_at,
+        Booking.booked_at,
     ]
-    column_sortable_list = [Booking.created_at, Booking.status]
-    column_default_sort = ("created_at", True)
+    column_sortable_list = [Booking.booked_at, Booking.status]
+    column_default_sort = ("booked_at", True)
 
     can_create = False
     can_delete = False
@@ -495,7 +497,7 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
     )
     total_rides = await db.scalar(select(func.count(Ride.id)))
     active_rides = await db.scalar(
-        select(func.count(Ride.id)).where(Ride.status == "scheduled")
+        select(func.count(Ride.id)).where(Ride.status == "active")
     )
     total_bookings = await db.scalar(select(func.count(Booking.id)))
     pending_cashbacks = await db.scalar(

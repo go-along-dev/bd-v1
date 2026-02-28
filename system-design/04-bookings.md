@@ -64,8 +64,13 @@ CREATE TABLE bookings (
     cancelled_at    TIMESTAMPTZ,
 
     -- Constraints
-    UNIQUE(ride_id, passenger_id)                -- One booking per passenger per ride
+    CHECK (seats_booked BETWEEN 1 AND 4)
 );
+
+-- Partial unique: one active/confirmed booking per passenger per ride
+CREATE UNIQUE INDEX idx_bookings_unique_active
+    ON bookings(ride_id, passenger_id)
+    WHERE status IN ('confirmed', 'active');
 
 CREATE INDEX idx_bookings_ride ON bookings(ride_id);
 CREATE INDEX idx_bookings_passenger ON bookings(passenger_id);
@@ -73,9 +78,10 @@ CREATE INDEX idx_bookings_status ON bookings(status);
 ```
 
 ### Things To Note:
-- **`UNIQUE(ride_id, passenger_id)`** — a passenger cannot book the same ride twice. If they need more seats, they update seats_booked.
+- **Partial unique index on `(ride_id, passenger_id) WHERE status IN ('confirmed', 'active')`** — a passenger cannot have two active bookings on the same ride, but CAN rebook after cancellation.
 - **`distance_km`** is the passenger's actual travel distance, not the ride's total distance. If pickup matches ride source, it equals `ride.total_distance_km`.
 - **`fare`** is calculated at booking time using the fare engine's partial route logic.
+- **`seats_booked` CHECK 1-4** — a single passenger can book at most 4 seats (group booking).
 
 ---
 

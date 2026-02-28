@@ -1,0 +1,61 @@
+# =============================================================================
+# docker-compose.dev.yml — Local Development Environment
+# =============================================================================
+# See: system-design/09-infra.md §2 "Local Development Setup"
+#
+# Brings up local PostgreSQL + MongoDB for development.
+# OSRM is NOT included here — use the GCP VM or mock it locally.
+#
+# Usage:
+#   docker compose -f docker-compose.dev.yml up -d
+#   docker compose -f docker-compose.dev.yml down -v   # tears down with data
+#
+# Then set your .env:
+#   SUPABASE_DB_URL=postgresql+asyncpg://goalong:goalong@localhost:5432/goalong
+#   MONGO_URI=mongodb://goalong:goalong@localhost:27017/goalong?authSource=admin
+#
+# NOTE: In production, Supabase PostgreSQL and MongoDB Atlas are used instead.
+#       This compose file is for LOCAL DEVELOPMENT ONLY.
+#
+# work by adolf.
+# =============================================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: goalong-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: goalong
+      POSTGRES_PASSWORD: goalong
+      POSTGRES_DB: goalong
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U goalong"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  mongo:
+    image: mongo:7-jammy
+    container_name: goalong-mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: goalong
+      MONGO_INITDB_ROOT_PASSWORD: goalong
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodata:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  pgdata:
+  mongodata:

@@ -31,8 +31,8 @@ Authentication is handled by **Supabase Auth** — GoAlong does NOT implement cu
        │  Authorization: Bearer <jwt>                    │
        │────────────────────────────────────────────────►│
        │                        │       Verify JWT using │
-       │                        │       Supabase public  │
-       │                        │       key (JWKS)       │
+       │                        │       Supabase JWT     │
+       │                        │       secret (HS256)   │
        │                        │                        │
        │                        │   6. If first login:   │
        │                        │      Create user row   │
@@ -192,27 +192,11 @@ FastAPI does NOT issue tokens. It only **verifies** the Supabase JWT.
 ```python
 # middleware/auth.py
 
-import httpx
-from jose import jwt, JWTError, jwk
+import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 security = HTTPBearer()
-
-# Cache the JWKS (JSON Web Key Set) from Supabase
-_jwks_cache = None
-
-async def get_supabase_jwks():
-    """Fetch Supabase's public keys for JWT verification."""
-    global _jwks_cache
-    if _jwks_cache is None:
-        async with httpx.AsyncClient() as client:
-            # Replace with your Supabase project URL
-            resp = await client.get(
-                f"{settings.SUPABASE_URL}/auth/v1/.well-known/jwks.json"
-            )
-            _jwks_cache = resp.json()
-    return _jwks_cache
 
 
 async def get_current_user(
@@ -226,28 +210,21 @@ async def get_current_user(
     token = credentials.credentials
 
     try:
-        # Decode without verification first to get the key ID
-        header = jwt.get_unverified_header(token)
-        jwks = await get_supabase_jwks()
-
-        # Find the matching key
-        key = None
-        for k in jwks["keys"]:
-            if k["kid"] == header["kid"]:
-                key = k
-                break
-
-        if key is None:
-            raise HTTPException(status_code=401, detail="Invalid token key")
-
-        # Verify and decode the JWT
+        # Verify and decode the JWT using Supabase JWT secret (HS256)
         payload = jwt.decode(
             token,
-            key,
-            algorithms=["RS256"],
+            settings.SUPABASE_JWT_SECRET,
+            algorithms=["HS256"],
             audience="authenticated",
+            leeway=30,  # 30s clock skew tolerance
         )
-    except JWTError:
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidTokenError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
@@ -295,7 +272,7 @@ async def get_or_create_by_supabase_uid(
             phone=phone,
             email=email,
             role="passenger",       # Default role
-            is_verified=True,       # Phone/email already verified by Supabase
+            is_active=True,         # Active by default, admin can deactivate
         )
         db.add(user)
         await db.commit()
@@ -318,7 +295,7 @@ async def get_profile(current_user: User = Depends(get_current_user)):
 ```
 
 ### Things To Note (FastAPI):
-1. **Cache the JWKS.** Fetching Supabase's public keys on every request is slow. Cache them in memory and refresh every ~1 hour.
+1. **HS256 with JWT secret.** Supabase defaults to HS256 symmetric signing. Use the `SUPABASE_JWT_SECRET` from your Supabase project settings to verify tokens. No JWKS/RS256 needed.
 2. **`sub` claim = Supabase user ID.** This is the UUID that links Supabase's `auth.users` to your `public.users` table.
 3. **The `audience` must be `"authenticated"`.** Supabase sets this claim on all user tokens. If you skip audience validation, you risk accepting tokens from other Supabase projects.
 4. **No password storage.** GoAlong never sees or stores passwords. Supabase handles all credential management.
@@ -338,7 +315,7 @@ CREATE TABLE users (
     profile_photo   TEXT,                    -- Supabase Storage URL
     role            VARCHAR(20) NOT NULL DEFAULT 'passenger',
                                              -- 'passenger' | 'driver' | 'admin'
-    is_verified     BOOLEAN DEFAULT TRUE,    -- Phone/email verified by Supabase
+    is_active        BOOLEAN DEFAULT TRUE,    -- Admin can deactivate; always TRUE on creation
     fcm_token       TEXT,                    -- For push notifications
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     updated_at      TIMESTAMPTZ DEFAULT NOW()

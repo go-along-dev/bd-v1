@@ -21,13 +21,21 @@ Driver creates ride
         ├──── Driver edits (if no bookings yet) ────► Still Active
         │
         ├──── Driver cancels ────────────────────► Cancelled
-        │     └── All passengers notified via FCM
+        │     └── All confirmed bookings cancelled, passengers notified via FCM
         │
-        ├──── Departure time passed ─────────────► Completed
-        │     └── Auto-updated by background task or on next access
+        ├──── Driver starts journey ─────────────► Departed
+        │     └── POST /rides/{ride_id}/depart — no new bookings accepted
         │
         └──── All seats booked ──────────────────► Active (full)
               └── Still active but available_seats = 0, not shown in search
+
+  ┌──────────┐
+  │ Departed  │  ← In-progress, not bookable, not editable
+  └─────┬─────┘
+        │
+        └──── Driver completes journey ──────────► Completed
+              └── POST /rides/{ride_id}/complete
+              └── All confirmed bookings → completed, fares credited to wallet
 ```
 
 ---
@@ -67,7 +75,7 @@ CREATE TABLE rides (
 
     -- Status
     status              VARCHAR(20) NOT NULL DEFAULT 'active',
-                                                      -- 'active' | 'completed' | 'cancelled'
+                                                      -- 'active' | 'departed' | 'completed' | 'cancelled'
 
     -- Timestamps
     created_at          TIMESTAMPTZ DEFAULT NOW(),
@@ -230,15 +238,18 @@ async def geocode_address(self, address: str) -> dict | None:
 
 ## API Endpoints
 
-| Method | Endpoint                  | Auth     | Role              | Description                       |
-|--------|---------------------------|----------|-------------------|-----------------------------------|
-| POST   | `/api/v1/rides`           | Required | Approved driver   | Create a new ride                 |
-| GET    | `/api/v1/rides`           | Required | Any               | Search rides (query params)       |
-| GET    | `/api/v1/rides/{ride_id}` | Required | Any               | Get ride details                  |
-| PUT    | `/api/v1/rides/{ride_id}` | Required | Ride owner        | Edit ride (restricted)            |
-| DELETE | `/api/v1/rides/{ride_id}` | Required | Ride owner        | Cancel ride                       |
-| GET    | `/api/v1/rides/my-rides`  | Required | Driver            | List driver's own rides           |
-| GET    | `/api/v1/rides/geocode`   | Required | Any               | Geocode an address (Nominatim)    |
+| Method | Endpoint                           | Auth     | Role              | Description                              |
+|--------|------------------------------------|----------|-------------------|------------------------------------------|
+| POST   | `/api/v1/rides`                    | Required | Approved driver   | Create a new ride                        |
+| GET    | `/api/v1/rides`                    | Required | Any               | Search rides (query params)              |
+| GET    | `/api/v1/rides/{ride_id}`          | Required | Any               | Get ride details                         |
+| PUT    | `/api/v1/rides/{ride_id}`          | Required | Ride owner        | Edit ride (restricted, no bookings only) |
+| DELETE | `/api/v1/rides/{ride_id}`          | Required | Ride owner        | Cancel ride                              |
+| POST   | `/api/v1/rides/{ride_id}/depart`   | Required | Ride owner        | Mark ride as departed                    |
+| POST   | `/api/v1/rides/{ride_id}/complete` | Required | Ride owner        | Mark ride as completed, settle fares     |
+| GET    | `/api/v1/rides/{ride_id}/bookings` | Required | Ride owner        | List bookings for a ride                 |
+| GET    | `/api/v1/rides/my-rides`           | Required | Driver            | List driver's own rides                  |
+| GET    | `/api/v1/rides/geocode`            | Required | Any               | Geocode an address (Nominatim)           |
 
 ---
 
@@ -342,6 +353,7 @@ async def create_ride(
 
     # 2. Calculate fare
     fare = await fare_engine.calculate_full_fare(
+        db=db,
         distance_km=route["distance_km"],
         mileage_kmpl=float(driver.mileage_kmpl),
         seats=data.total_seats,
@@ -495,6 +507,83 @@ async def update_ride(
 
 ---
 
+## Ride Departure
+
+```python
+async def depart_ride(
+    db: AsyncSession,
+    ride: Ride,
+) -> Ride:
+    """Mark a ride as departed — no new bookings accepted."""
+
+    if ride.status != "active":
+        raise HTTPException(status_code=400, detail="Only active rides can depart")
+
+    ride.status = "departed"
+    ride.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(ride)
+    return ride
+```
+
+---
+
+## Ride Completion (Settlement)
+
+```python
+async def complete_ride(
+    db: AsyncSession,
+    ride: Ride,
+    notification_service,
+    wallet_service,
+) -> Ride:
+    """
+    Complete a ride: settle all confirmed bookings and credit driver wallet.
+    Only departed rides can be completed.
+    """
+
+    if ride.status != "departed":
+        raise HTTPException(status_code=400, detail="Only departed rides can be completed")
+
+    ride.status = "completed"
+    ride.updated_at = datetime.now(timezone.utc)
+
+    # Complete all confirmed bookings and accumulate total earnings
+    total_earnings = Decimal("0")
+    bookings = await db.execute(
+        select(Booking).where(
+            Booking.ride_id == ride.id,
+            Booking.status == "confirmed",
+        )
+    )
+    for booking in bookings.scalars().all():
+        booking.status = "completed"
+        total_earnings += booking.fare
+
+        # Notify passenger
+        await notification_service.send_push(
+            db=db,
+            user_id=booking.passenger_id,
+            title="Ride Completed",
+            body=f"Your ride to {ride.dest_address} is complete. Thank you!",
+        )
+
+    # Credit driver's wallet
+    if total_earnings > 0:
+        await wallet_service.credit_ride_earnings(
+            db=db,
+            driver_id=ride.driver_id,
+            ride_id=ride.id,
+            amount=total_earnings,
+        )
+
+    await db.commit()
+    await db.refresh(ride)
+    return ride
+```
+
+---
+
 ## Ride Cancellation
 
 ```python
@@ -505,8 +594,8 @@ async def cancel_ride(
 ) -> Ride:
     """Cancel a ride and notify all booked passengers."""
 
-    if ride.status != "active":
-        raise HTTPException(status_code=400, detail="Ride is not active")
+    if ride.status not in ("active", "departed"):
+        raise HTTPException(status_code=400, detail="Ride cannot be cancelled")
 
     ride.status = "cancelled"
     ride.updated_at = datetime.now(timezone.utc)
@@ -524,6 +613,7 @@ async def cancel_ride(
 
         # Notify passenger via FCM
         await notification_service.send_push(
+            db=db,
             user_id=booking.passenger_id,
             title="Ride Cancelled",
             body=f"Your ride to {ride.dest_address} has been cancelled by the driver.",
@@ -620,7 +710,7 @@ class _MapPickerState extends State<MapPicker> {
 
 ## Completed Ride Auto-Cleanup
 
-Rides should auto-transition to `completed` once departure time has passed. Two approaches for MVP:
+Rides past departure time should not remain `active`. Two approaches for MVP:
 
 ### Option A: Check on Read (Recommended for MVP)
 ```python
@@ -628,7 +718,8 @@ Rides should auto-transition to `completed` once departure time has passed. Two 
 async def get_ride(db, ride_id):
     ride = await db.get(Ride, ride_id)
     if ride and ride.status == "active" and ride.departure_time < datetime.now(timezone.utc):
-        ride.status = "completed"
+        # Auto-transition stale active rides to departed (driver forgot to tap)
+        ride.status = "departed"
         await db.commit()
     return ride
 ```

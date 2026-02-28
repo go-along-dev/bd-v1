@@ -1,0 +1,30 @@
+# =============================================================================
+# pyproject.toml — Python Project Configuration
+# =============================================================================
+# See: system-design/09-infra.md for tooling decisions
+#
+# TODO: Configure properly once dependencies are finalized.
+# =============================================================================
+
+[project]
+name = "goalong-api"
+version = "0.1.0"
+description = "GoAlong Intercity Ride-Sharing Backend API"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+select = ["E", "F", "W", "I", "N", "UP"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+# work by adolf.

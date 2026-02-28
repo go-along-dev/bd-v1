@@ -518,4 +518,4 @@ Admin Dashboard (SQLAdmin)
 
 5. **Document re-upload.** If a driver is rejected and needs to re-upload documents, they should delete the old document and upload a new one. The `doc_type` unique constraint prevents duplicate types.
 
-6. **Supabase Storage signed URLs have expiry.** For driver documents (private bucket), generate long-lived signed URLs (1 year). For admin review, generate short-lived URLs on demand.
+6. **Supabase Storage signed URLs have expiry.** For driver documents (private bucket), generate short-lived signed URLs (1 hour). Admin review pages should generate a fresh signed URL each time the page is loaded. Do not store signed URLs in the database — store the storage path only.
