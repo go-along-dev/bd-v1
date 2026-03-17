@@ -1,0 +1,7 @@
+# Alembic migration versions directory.
+# Each migration file here represents a schema change.
+#
+# First migration should create all 8 tables.
+# See: system-design/11-db-schema-ddl.md for full DDL.
+#
+# work by adolf.

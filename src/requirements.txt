@@ -1,0 +1,48 @@
+# =============================================================================
+# requirements.txt — Python Dependencies
+# =============================================================================
+# See: system-design/00-architecture.md §3 "Tech Stack" for why each is chosen
+#
+# TODO: Pin exact versions once development begins.
+#       Use: pip freeze > requirements.txt after installing.
+# =============================================================================
+
+# --- Framework ---
+fastapi
+uvicorn[standard]
+pydantic[email]
+pydantic-settings
+
+# --- Database (PostgreSQL via Supabase) ---
+sqlalchemy[asyncio]
+asyncpg
+alembic
+
+# --- Database (MongoDB for chat) ---
+motor
+
+# --- Auth ---
+PyJWT
+cryptography
+
+# --- Admin Panel ---
+sqladmin
+
+# --- HTTP Client (for OSRM, Nominatim, Supabase Storage API) ---
+httpx
+
+# --- Push Notifications ---
+firebase-admin
+
+# --- Rate Limiting ---
+slowapi
+
+# --- Logging ---
+structlog
+
+# --- Testing ---
+pytest
+pytest-asyncio
+httpx  # also used as test client for FastAPI
+
+# work by adolf.
