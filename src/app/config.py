@@ -3,8 +3,8 @@ from pydantic_settings import BaseSettings
 from typing import List
 import json
 
-# Locate the .env file
-_env_file = Path(__file__).resolve().parent.parent.parent / ".env"
+# Locate the .env file (Works for both local and Docker)
+_env_file = Path(__file__).resolve().parent.parent / ".env"
 
 class Settings(BaseSettings):
     # ─── App ──────────────────────────────────

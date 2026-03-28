@@ -4,9 +4,10 @@ from uuid import UUID
 
 # ─── Sync Request ─────────────────────────────
 class AuthSyncRequest(BaseModel):
-    name:          str | None = None
+    name:          str | None = Field(None, alias="name")
     email:         str | None = None
-    phone:         str | None = None
+    phone:         str | None = Field(None, alias="phone")
+    role:          str | None = "passenger"
     profile_photo: str | None = None
 
 

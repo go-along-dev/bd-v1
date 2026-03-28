@@ -30,10 +30,13 @@ class FareEngine:
         ):
             return
 
-        result = await db.execute(select(PlatformConfig))
-        rows = result.scalars().all()
-
-        config = {row.key: row.value for row in rows}
+        try:
+            result = await db.execute(select(PlatformConfig))
+            rows = result.scalars().all()
+            config = {row.key: row.value for row in rows}
+        except Exception as e:
+            print(f"⚠️ FARE CONFIG: DB query failed, using defaults. Error: {e}")
+            config = {}
 
         self._cache = {
             "fuel_price_per_litre": Decimal(config.get("fuel_price_per_litre", "103.00")),

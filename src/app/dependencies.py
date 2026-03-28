@@ -3,13 +3,12 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-import jwt
+from jose import jwt, JWTError
 
 from app.db.postgres import AsyncSessionLocal
 from app.config import settings
 
 security = HTTPBearer()
-
 
 # ─── DB Session ───────────────────────────────
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -33,44 +32,73 @@ def get_pagination(page: int = 1, per_page: int = 20):
     return {"page": page, "per_page": per_page, "offset": offset}
 
 
+# ─── Auth Token Payload ──────────────────────────
 async def get_auth_token_payload(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> dict:
     token = credentials.credentials
     
-    # --- Demo Bypass ---
-    if token == "demo-token":
-        print("🔓 Demo Token recognized")
-        return {"sub": "00000000-0000-0000-0000-000000000000"}
+    # DEBUG: Confirm token is reaching the backend
+    print(f"DEBUG: Headers Auth: Bearer {token[:15]}...")
+    
+    # --- Demo/Test Bypass ---
+    if token == "demo-token" or settings.APP_ENV == "development" and token.startswith("test-"):
+        print("🔓 Debug Token recognized")
+        return {
+            "sub": "00000000-0000-0000-0000-000000000000",
+            "email": "demo@goalong.in",
+            "aud": "authenticated"
+        }
     # -------------------
 
     try:
+        # DEBUG: Log the unverified header to see 'alg'
+        header = jwt.get_unverified_header(token)
+        print(f"DEBUG: Token Header: {header}")
+        
+        # Legacy Supabase JWT Configuration (HS256)
+        # Expected Issuer: https://<project>.supabase.co/auth/v1
+        expected_iss = f"{settings.SUPABASE_URL}/auth/v1".replace("http://", "https://")
+        
         payload = jwt.decode(
             token,
             settings.SUPABASE_JWT_SECRET,
-            algorithms=["HS256"],
+            algorithms=["HS256", "RS256", "ES256", "EdDSA"], # Support modern Supabase ES256
             audience="authenticated",
-            leeway=30,
+            issuer=expected_iss,
+            options={
+                "verify_aud": True,
+                "verify_iss": True,
+                "verify_exp": True,
+            }
         )
+        
+        print(f"✅ AUTH: Token validated for user: {payload.get('sub')}")
+        return payload
+
     except jwt.ExpiredSignatureError:
+        print("❌ AUTH: Token expired")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token expired",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    except jwt.InvalidTokenError:
+    except JWTError as e:
+        print(f"❌ AUTH: Invalid token/signature: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
+            detail=f"Invalid token: {str(e)}",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
-    if not payload.get("sub"):
+    except (JWTError, Exception) as e:
+        # Catch EVERY type of error (Signature, Deserialization, KeyError, etc.)
+        # and safely return a 401 instead of crashing the server.
+        print(f"❌ AUTH: Validation failed - {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token payload: missing sub"
+            detail="Session invalid or expired. Please log in again.",
+            headers={"WWW-Authenticate": "Bearer"},
         )
-    return payload
 
 
 # ─── Current User ─────────────────────────────

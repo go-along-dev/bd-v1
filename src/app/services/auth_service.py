@@ -39,7 +39,7 @@ async def sync_user(
             email=data.email,
             phone=data.phone,
             profile_photo=data.profile_photo,
-            role="passenger",
+            role=data.role if data.role else "passenger",
             is_active=True,
             referral_code=generate_referral_code(),
         )
@@ -64,6 +64,8 @@ async def sync_user(
         user.phone = data.phone
     if data.profile_photo is not None:
         user.profile_photo = data.profile_photo
+    if data.role is not None:
+        user.role = data.role
 
     await db.commit()
     await db.refresh(user)

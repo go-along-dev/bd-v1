@@ -17,7 +17,6 @@ from app.routers import (
     wallet, chat, fare,
 )
 
-
 # ─── Lifespan ─────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -32,7 +31,6 @@ async def lifespan(app: FastAPI):
     await close_mongo()
     await ors_service.close_client()
     print("🔴 GoAlong API stopped")
-
 
 # ─── App ──────────────────────────────────────
 app = FastAPI(
@@ -76,3 +74,5 @@ app.include_router(fare.router,     prefix="/api/v1")
 @app.get("/health", tags=["Health"])
 async def health():
     return {"status": "ok", "env": settings.APP_ENV}
+
+

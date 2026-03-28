@@ -11,6 +11,8 @@ PUBLIC_ROUTES = {
     "/docs",
     "/redoc",
     "/openapi.json",
+    "/api/v1/fare/calculate",
+    "/api/v1/fare/partial",
 }
 
 
